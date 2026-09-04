@@ -43,11 +43,22 @@ bool FileWriter::open(const QString& baseOutputDir,
                       DuplicatePolicy policy) {
     close();
 
-    QString cleanSender = PlatformFilesystem::sanitizeDeviceName(senderDevice);
+    // Verify disk space upfront if non-zero expected size
+    if (expectedFileSize > 0) {
+        uint64_t availableDisk = PlatformFilesystem::getAvailableDiskSpace(baseOutputDir);
+        if (availableDisk > 0 && expectedFileSize > availableDisk) {
+            m_errorString = QString("Insufficient disk space on destination drive. Required: %1 bytes, Available: %2 bytes")
+                                .arg(expectedFileSize)
+                                .arg(availableDisk);
+            return false;
+        }
+    }
+
+    QString cleanFolder = PlatformFilesystem::sanitizeDeviceName(senderDevice);
     QString cleanRel = PlatformFilesystem::sanitizePath(relativePath);
 
     QDir base(baseOutputDir);
-    QString targetDir = base.filePath(cleanSender);
+    QString targetDir = base.filePath(cleanFolder);
     m_targetFilePath = QDir(targetDir).filePath(cleanRel);
     m_expectedFileSize = expectedFileSize;
     m_hasher.reset();
@@ -103,7 +114,8 @@ bool FileWriter::open(const QString& baseOutputDir,
         PlatformFilesystem::preallocateFile(m_partialFilePath, expectedFileSize);
 
         m_file.setFileName(m_partialFilePath);
-        if (!m_file.open(QIODevice::WriteOnly)) {
+        // Note: Using ReadWrite so that Qt does not truncate the preallocated file!
+        if (!m_file.open(QIODevice::ReadWrite)) {
             m_errorString = m_file.errorString();
             return false;
         }

@@ -128,12 +128,19 @@ void MainWindow::connectSignals() {
         Q_UNUSED(ip); Q_UNUSED(port);
     });
 
+    connect(m_transferPage, &TransferPage::acceptOfferClicked, this, &MainWindow::onOfferAccepted);
+    connect(m_transferPage, &TransferPage::rejectOfferClicked, this, &MainWindow::onOfferRejected);
+
     connect(m_settingsPage, &SettingsPage::themeChanged, this, [this](bool isDark) {
         if (isDark) {
             ThemeManager::applyDarkTheme(*qApp);
         } else {
             ThemeManager::applyLightTheme(*qApp);
         }
+    });
+
+    connect(m_settingsPage, &SettingsPage::autoAcceptChanged, this, [this](bool enabled) {
+        if (m_receivePage) m_receivePage->setAutoAccept(enabled);
     });
 
     if (m_manager) {
@@ -148,8 +155,13 @@ void MainWindow::connectSignals() {
             m_devicesPage->updateDiscoveredDevices(devices);
         });
 
-        connect(m_receivePage, &ReceivePage::autoAcceptToggled, m_manager, &TransferManager::setAutoAccept);
+        connect(m_receivePage, &ReceivePage::autoAcceptToggled, this, [this](bool enabled) {
+            if (m_manager) m_manager->setAutoAccept(enabled);
+            if (m_settingsPage) m_settingsPage->setAutoAccept(enabled);
+        });
+
         m_receivePage->setAutoAccept(m_manager->autoAccept());
+        m_settingsPage->setAutoAccept(m_manager->autoAccept());
 
         connect(m_manager, &TransferManager::historyUpdated, this, [this]() {
             m_historyPage->refreshHistory();
@@ -175,6 +187,7 @@ void MainWindow::onSendRequested(const QHostAddress& ip, uint16_t port, const QS
 void MainWindow::onIncomingTransferOffered(TransferSession* session, const QString& senderDevice, uint64_t totalFiles, uint64_t totalBytes) {
     m_currentOfferSession = session;
     m_receivePage->showIncomingOffer(senderDevice, totalFiles, totalBytes);
+    m_transferPage->setSession(session);
     m_btnReceive->setChecked(true);
     m_stackedWidget->setCurrentIndex(1); // Switch to Receive page so user can approve
 
@@ -201,7 +214,7 @@ void MainWindow::onIncomingTransferOffered(TransferSession* session, const QStri
 
     if (msgBox.clickedButton() == acceptBtn) {
         onOfferAccepted();
-    } else {
+    } else if (msgBox.clickedButton() == rejectBtn) {
         onOfferRejected();
     }
 }

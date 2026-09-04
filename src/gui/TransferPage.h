@@ -27,6 +27,8 @@ signals:
     void pauseRequested();
     void resumeRequested();
     void cancelRequested();
+    void acceptOfferClicked();
+    void rejectOfferClicked();
 
 private slots:
     void onPauseResumeClicked();
@@ -56,6 +58,11 @@ private:
     QLabel* m_overallLabel = nullptr;
     QLabel* m_overallStats = nullptr;
     QProgressBar* m_overallBar = nullptr;
+
+    // Offer inline actions
+    QFrame* m_offerActionFrame = nullptr;
+    QPushButton* m_acceptOfferBtn = nullptr;
+    QPushButton* m_rejectOfferBtn = nullptr;
 
     // Control buttons
     QPushButton* m_pauseResumeBtn = nullptr;

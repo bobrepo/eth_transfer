@@ -71,8 +71,11 @@ private slots:
         QTRY_VERIFY_WITH_TIMEOUT(senderDoneSpy.count() >= 1, 10000);
         QTRY_VERIFY_WITH_TIMEOUT(receiverDoneSpy.count() >= 1, 10000);
 
-        // Verify receiver output path: <destDir>/Sender-PC/test_large_file.bin
-        QString receivedFilePath = destDir.filePath("Sender-PC/test_large_file.bin");
+        // Verify receiver output path with unique timestamped folder
+        QVERIFY(!receiverSession->sessionSubfolder().isEmpty());
+        QVERIFY(receiverSession->sessionSubfolder().startsWith(QStringLiteral("Sender-PC_")));
+
+        QString receivedFilePath = destDir.filePath(receiverSession->sessionSubfolder() + QStringLiteral("/test_large_file.bin"));
         QVERIFY(QFile::exists(receivedFilePath));
 
         // Verify file size and BLAKE3 checksum

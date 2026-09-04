@@ -101,6 +101,17 @@ SettingsPage::SettingsPage(TransferManager* manager, QWidget* parent)
 
     connect(browseBtn, &QPushButton::clicked, this, &SettingsPage::onBrowseFolderClicked);
 
+    m_autoAcceptCheck = new QCheckBox(QStringLiteral("Auto-accept incoming transfers from local Ethernet devices (skip approval prompt)"), transCard);
+    m_autoAcceptCheck->setChecked(m_manager ? m_manager->autoAccept() : false);
+    transForm->addRow(QStringLiteral("Auto-Accept Mode:"), m_autoAcceptCheck);
+
+    connect(m_autoAcceptCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        if (m_manager) {
+            m_manager->setAutoAccept(checked);
+        }
+        emit autoAcceptChanged(checked);
+    });
+
     mainLayout->addWidget(transCard);
 
     // Appearance & Diagnostics Card
@@ -175,8 +186,18 @@ void SettingsPage::onSaveClicked() {
         m_manager->setDefaultDownloadDir(downDir);
     }
 
+    bool autoAccept = m_autoAcceptCheck ? m_autoAcceptCheck->isChecked() : false;
+    m_manager->setAutoAccept(autoAccept);
+    emit autoAcceptChanged(autoAccept);
+
     QMessageBox::information(this, QStringLiteral("Settings Saved"),
                              QStringLiteral("Your application configuration preferences have been saved successfully."));
+}
+
+void SettingsPage::setAutoAccept(bool enabled) {
+    if (m_autoAcceptCheck && m_autoAcceptCheck->isChecked() != enabled) {
+        m_autoAcceptCheck->setChecked(enabled);
+    }
 }
 
 } // namespace FastTransfer

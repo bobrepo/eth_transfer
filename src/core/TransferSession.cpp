@@ -2,7 +2,9 @@
 #include <QUuid>
 #include <QFileInfo>
 #include <QDir>
+#include <QDateTime>
 #include <algorithm>
+#include "../platform/PlatformFilesystem.h"
 
 namespace FastTransfer {
 
@@ -128,9 +130,11 @@ void TransferSession::sendNextChunk() {
         return;
     }
 
-    // Flow control: keep socket write buffer under 16MB to avoid memory ballooning
-    if (m_connection->socket() && m_connection->socket()->bytesToWrite() > 16 * 1024 * 1024) {
-        // Will be triggered by bytesWritten slot
+    qint64 maxPending = std::max<qint64>(static_cast<qint64>(m_chunkSize * 2), 16 * 1024 * 1024);
+
+    // Flow control: keep socket write buffer managed
+    if (m_connection->socket() && m_connection->socket()->bytesToWrite() >= maxPending) {
+        // Will be triggered by bytesWritten slot via onBytesTransferred
         return;
     }
 
@@ -159,13 +163,20 @@ void TransferSession::sendNextChunk() {
     chunkMsg.chunkSize = static_cast<uint32_t>(chunk.size());
     chunkMsg.chunkData = chunk;
 
-    m_connection->sendPacket(MessageType::FileDataChunk, Protocol::serializeFileDataChunk(chunkMsg));
+    bool sent = m_connection->sendPacket(MessageType::FileDataChunk, Protocol::serializeFileDataChunk(chunkMsg));
+    if (!sent) {
+        setStatus(TransferStatus::Failed);
+        emit transferFailed(QStringLiteral("Network socket error: Failed to transmit data chunk"));
+        return;
+    }
 
     m_metrics.currentFileTransferred += static_cast<uint64_t>(chunk.size());
     m_metrics.totalTransferred += static_cast<uint64_t>(chunk.size());
 
-    // Schedule next chunk execution asynchronously
-    QMetaObject::invokeMethod(this, "sendNextChunk", Qt::QueuedConnection);
+    // Schedule next chunk execution asynchronously if buffer has room
+    if (!m_connection->socket() || m_connection->socket()->bytesToWrite() < maxPending) {
+        QMetaObject::invokeMethod(this, "sendNextChunk", Qt::QueuedConnection);
+    }
 }
 
 // ----------------- Receiver Implementation -----------------
@@ -173,6 +184,22 @@ void TransferSession::sendNextChunk() {
 void TransferSession::acceptTransfer(const QString& baseOutputDir, DuplicatePolicy policy) {
     m_baseOutputDir = baseOutputDir;
     m_duplicatePolicy = policy;
+
+    if (m_sessionSubfolder.isEmpty()) {
+        QString cleanSender = PlatformFilesystem::sanitizeDeviceName(m_remoteDevice);
+        if (cleanSender.isEmpty()) cleanSender = QStringLiteral("Sender");
+        QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd_HH-mm-ss"));
+        QString baseName = QStringLiteral("%1_%2").arg(cleanSender, timestamp);
+
+        // Ensure folder uniqueness if multiple transfers initiated in the same second
+        QDir baseDir(baseOutputDir);
+        QString candidate = baseName;
+        int counter = 1;
+        while (baseDir.exists(candidate)) {
+            candidate = QStringLiteral("%1_%2").arg(baseName, QString::number(counter++));
+        }
+        m_sessionSubfolder = candidate;
+    }
 
     if (!m_receivedOffer) return;
 
@@ -335,13 +362,18 @@ void TransferSession::onPacketReceived(MessageType type, uint16_t flags, const Q
 
                 emit fileStarted(start->fileIndex, start->relativePath, start->fileSize);
 
+                QString subFolder = m_sessionSubfolder.isEmpty() ? m_remoteDevice : m_sessionSubfolder;
                 m_fileWriter = std::make_unique<FileWriter>();
-                if (!m_fileWriter->open(m_baseOutputDir, m_remoteDevice, start->relativePath,
+                if (!m_fileWriter->open(m_baseOutputDir, subFolder, start->relativePath,
                                         start->fileSize, 0, m_duplicatePolicy)) {
                     MsgFileAck ack;
                     ack.fileIndex = start->fileIndex;
                     ack.statusCode = 2; // Write error
                     m_connection->sendPacket(MessageType::FileAck, Protocol::serializeFileAck(ack));
+                    setStatus(TransferStatus::Failed);
+                    emit transferFailed(QString("Failed to prepare destination file: %1").arg(m_fileWriter->errorString()));
+                    m_connection->disconnectFromHost();
+                    return;
                 }
             }
             break;
@@ -354,6 +386,11 @@ void TransferSession::onPacketReceived(MessageType type, uint16_t flags, const Q
                 if (ok) {
                     m_metrics.currentFileTransferred += static_cast<uint64_t>(chunk->chunkData.size());
                     m_metrics.totalTransferred += static_cast<uint64_t>(chunk->chunkData.size());
+                } else {
+                    setStatus(TransferStatus::Failed);
+                    emit transferFailed(QString("Disk write error: %1").arg(m_fileWriter->errorString()));
+                    m_connection->disconnectFromHost();
+                    return;
                 }
             }
             break;
@@ -460,9 +497,11 @@ void TransferSession::onSocketError(const QString& errorMsg) {
 
 void TransferSession::onBytesTransferred(qint64 bytes) {
     Q_UNUSED(bytes);
-    if (m_direction == TransferDirection::Send && m_status == TransferStatus::Transferring) {
-        // Socket write buffer has drained some bytes, try sending next chunk if waiting
-        sendNextChunk();
+    if (m_direction == TransferDirection::Send && m_status == TransferStatus::Transferring && !m_waitingFileAck) {
+        qint64 maxPending = std::max<qint64>(static_cast<qint64>(m_chunkSize * 2), 16 * 1024 * 1024);
+        if (!m_connection->socket() || m_connection->socket()->bytesToWrite() < maxPending) {
+            sendNextChunk();
+        }
     }
 }
 
@@ -472,7 +511,10 @@ void TransferSession::calculateMetrics() {
     qint64 elapsedMs = m_sessionTimer.elapsed();
     m_metrics.elapsedSeconds = elapsedMs / 1000;
 
-    uint64_t currentTotal = m_metrics.totalTransferred;
+    // For sender, measuring real bytes transmitted by socket reflects true wire speed
+    uint64_t currentTotal = (m_direction == TransferDirection::Send && m_connection)
+                                ? m_connection->totalBytesSent()
+                                : m_metrics.totalTransferred;
     uint64_t deltaBytes = (currentTotal >= static_cast<uint64_t>(m_lastBytesCount))
                               ? (currentTotal - static_cast<uint64_t>(m_lastBytesCount))
                               : 0;

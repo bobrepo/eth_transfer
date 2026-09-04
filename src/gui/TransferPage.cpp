@@ -153,6 +153,22 @@ TransferPage::TransferPage(QWidget* parent)
     actionRow->addWidget(m_integrityLabel);
     actionRow->addStretch();
 
+    // Inline approval frame for incoming offers
+    m_offerActionFrame = new QFrame(this);
+    QHBoxLayout* offerActLayout = new QHBoxLayout(m_offerActionFrame);
+    offerActLayout->setContentsMargins(0, 0, 0, 0);
+    offerActLayout->setSpacing(8);
+
+    m_acceptOfferBtn = new QPushButton(QStringLiteral("ACCEPT INCOMING TRANSFER"), m_offerActionFrame);
+    m_acceptOfferBtn->setObjectName(QStringLiteral("SuccessButton"));
+    m_rejectOfferBtn = new QPushButton(QStringLiteral("REJECT"), m_offerActionFrame);
+    m_rejectOfferBtn->setObjectName(QStringLiteral("DangerButton"));
+
+    offerActLayout->addWidget(m_acceptOfferBtn);
+    offerActLayout->addWidget(m_rejectOfferBtn);
+    m_offerActionFrame->hide();
+    actionRow->addWidget(m_offerActionFrame);
+
     m_pauseResumeBtn = new QPushButton(QStringLiteral("PAUSE"), this);
     m_pauseResumeBtn->setEnabled(false);
     m_cancelBtn = new QPushButton(QStringLiteral("CANCEL"), this);
@@ -163,6 +179,8 @@ TransferPage::TransferPage(QWidget* parent)
     actionRow->addWidget(m_cancelBtn);
     mainLayout->addLayout(actionRow);
 
+    connect(m_acceptOfferBtn, &QPushButton::clicked, this, &TransferPage::acceptOfferClicked);
+    connect(m_rejectOfferBtn, &QPushButton::clicked, this, &TransferPage::rejectOfferClicked);
     connect(m_pauseResumeBtn, &QPushButton::clicked, this, &TransferPage::onPauseResumeClicked);
     connect(m_cancelBtn, &QPushButton::clicked, this, &TransferPage::onCancelClicked);
 }
@@ -179,10 +197,15 @@ void TransferPage::setSession(TransferSession* session) {
         m_remoteInfoLabel->setText(QStringLiteral("No transfer currently in progress."));
         m_pauseResumeBtn->setEnabled(false);
         m_cancelBtn->setEnabled(false);
+        m_offerActionFrame->hide();
     }
 }
 
 void TransferPage::updateStatus(TransferStatus status) {
+    if (m_offerActionFrame) {
+        m_offerActionFrame->hide();
+    }
+
     switch (status) {
         case TransferStatus::Connecting:
             m_statusBadge->setText(QStringLiteral("CONNECTING"));
@@ -196,10 +219,26 @@ void TransferPage::updateStatus(TransferStatus status) {
             break;
         case TransferStatus::Offering:
         case TransferStatus::WaitingApproval:
-            m_statusBadge->setText(QStringLiteral("WAITING FOR APPROVAL"));
-            m_statusBadge->setStyleSheet("background-color: #78350F; color: #FCD34D; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 6px;");
-            m_largeSpeedLabel->setText(QStringLiteral("Waiting..."));
-            m_currentFileLabel->setText(QStringLiteral("⚠️ Waiting for approval: Please click 'ACCEPT TRANSFER' on the receiving computer."));
+            if (m_session && m_session->direction() == TransferDirection::Receive) {
+                m_statusBadge->setText(QStringLiteral("INCOMING OFFER"));
+                m_statusBadge->setStyleSheet("background-color: #1E3A8A; color: #93C5FD; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 6px;");
+                m_largeSpeedLabel->setText(QStringLiteral("Offer Pending"));
+                m_currentFileLabel->setText(QString("🔔 Incoming transfer from %1 (%2 files, %3). Click 'ACCEPT INCOMING TRANSFER' below to receive.")
+                                                .arg(m_session->remoteDevice().isEmpty() ? QStringLiteral("remote device") : m_session->remoteDevice())
+                                                .arg(m_session->metrics().totalFiles)
+                                                .arg(formatBytes(m_session->metrics().totalBytes)));
+                if (m_offerActionFrame) {
+                    m_offerActionFrame->show();
+                }
+            } else {
+                m_statusBadge->setText(QStringLiteral("WAITING FOR RECEIVER APPROVAL"));
+                m_statusBadge->setStyleSheet("background-color: #78350F; color: #FCD34D; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 6px;");
+                m_largeSpeedLabel->setText(QStringLiteral("Waiting..."));
+                m_currentFileLabel->setText(QString("⏳ Waiting for %1 to accept the transfer on their screen...")
+                                                .arg(m_session && !m_session->remoteDevice().isEmpty() ? m_session->remoteDevice() : QStringLiteral("remote computer")));
+            }
+            m_pauseResumeBtn->setEnabled(false);
+            m_cancelBtn->setEnabled(true);
             break;
         case TransferStatus::Transferring:
             m_statusBadge->setText(QStringLiteral("TRANSFERRING"));

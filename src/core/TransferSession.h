@@ -25,6 +25,7 @@ public:
     TransferStatus status() const { return m_status; }
     QString transferId() const { return m_transferId; }
     QString remoteDevice() const { return m_remoteDevice; }
+    QString sessionSubfolder() const { return m_sessionSubfolder; }
     QHostAddress remoteIp() const;
     TransferMetrics metrics() const { return m_metrics; }
 
@@ -88,6 +89,7 @@ private:
     std::optional<MsgTransferOffer> m_receivedOffer;
     std::unique_ptr<FileWriter> m_fileWriter;
     QString m_baseOutputDir;
+    QString m_sessionSubfolder;
     DuplicatePolicy m_duplicatePolicy = DuplicatePolicy::Rename;
     uint64_t m_currentReceivingFileIndex = 0;
     uint64_t m_expectedFileSize = 0;

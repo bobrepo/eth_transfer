@@ -161,7 +161,7 @@ void ReceivePage::updateDiscoveredSenders(const QList<DiscoveredDevice>& senders
 void ReceivePage::showIncomingOffer(const QString& senderDevice, uint64_t totalFiles, uint64_t totalBytes) {
     m_offerSenderLabel->setText(QString("From: %1").arg(senderDevice));
     m_offerStatsLabel->setText(QString("Files: %1  •  Total Size: %2").arg(totalFiles).arg(formatBytes(totalBytes)));
-    m_offerDestLabel->setText(QString("Destination: %1/%2/").arg(m_downloadDir, PlatformFilesystem::sanitizeDeviceName(senderDevice)));
+    m_offerDestLabel->setText(QString("Destination: %1/%2_<timestamp>/").arg(m_downloadDir, PlatformFilesystem::sanitizeDeviceName(senderDevice)));
     m_offerCard->show();
 }
 

@@ -16,8 +16,11 @@ public:
     explicit SettingsPage(TransferManager* manager, QWidget* parent = nullptr);
     ~SettingsPage() override = default;
 
+    void setAutoAccept(bool enabled);
+
 signals:
     void themeChanged(bool isDark);
+    void autoAcceptChanged(bool enabled);
 
 private slots:
     void onSaveClicked();
@@ -32,6 +35,7 @@ private:
     QComboBox* m_chunkSizeCombo = nullptr;
     QComboBox* m_duplicatePolicyCombo = nullptr;
     QLineEdit* m_downloadDirEdit = nullptr;
+    QCheckBox* m_autoAcceptCheck = nullptr;
     QCheckBox* m_darkModeCheck = nullptr;
 };
 
