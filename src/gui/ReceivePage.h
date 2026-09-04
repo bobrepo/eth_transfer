@@ -6,6 +6,7 @@
 #include <QPushButton>
 #include <QListWidget>
 #include <QFrame>
+#include <QCheckBox>
 #include "../network/DiscoveryService.h"
 #include "../core/TransferTypes.h"
 
@@ -24,8 +25,12 @@ public:
     void showIncomingOffer(const QString& senderDevice, uint64_t totalFiles, uint64_t totalBytes);
     void hideIncomingOffer();
 
+    bool isAutoAcceptEnabled() const;
+    void setAutoAccept(bool enabled);
+
 signals:
     void downloadDirChanged(const QString& newDir);
+    void autoAcceptToggled(bool enabled);
     void offerAccepted();
     void offerRejected();
 
@@ -47,6 +52,7 @@ private:
     QLabel* m_offerSenderLabel = nullptr;
     QLabel* m_offerStatsLabel = nullptr;
     QLabel* m_offerDestLabel = nullptr;
+    QCheckBox* m_autoAcceptCheck = nullptr;
 };
 
 } // namespace FastTransfer

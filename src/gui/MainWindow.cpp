@@ -148,6 +148,9 @@ void MainWindow::connectSignals() {
             m_devicesPage->updateDiscoveredDevices(devices);
         });
 
+        connect(m_receivePage, &ReceivePage::autoAcceptToggled, m_manager, &TransferManager::setAutoAccept);
+        m_receivePage->setAutoAccept(m_manager->autoAccept());
+
         connect(m_manager, &TransferManager::historyUpdated, this, [this]() {
             m_historyPage->refreshHistory();
         });
@@ -200,6 +203,12 @@ void MainWindow::onSessionStarted(TransferSession* session) {
         connect(session, &TransferSession::metricsUpdated, m_transferPage, &TransferPage::updateMetrics);
         connect(session, &TransferSession::statusChanged, m_transferPage, &TransferPage::updateStatus);
         connect(session, &TransferSession::speedSampleRecorded, m_transferPage, &TransferPage::addSpeedSample);
+
+        if (m_manager && m_manager->autoAccept() && session->direction() == TransferDirection::Receive) {
+            m_transferPage->setSession(session);
+            m_btnTransfers->setChecked(true);
+            m_stackedWidget->setCurrentIndex(2);
+        }
     }
 }
 

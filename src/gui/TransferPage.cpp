@@ -184,6 +184,23 @@ void TransferPage::setSession(TransferSession* session) {
 
 void TransferPage::updateStatus(TransferStatus status) {
     switch (status) {
+        case TransferStatus::Connecting:
+            m_statusBadge->setText(QStringLiteral("CONNECTING"));
+            m_statusBadge->setStyleSheet("background-color: #1E293B; color: #94A3B8; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 6px;");
+            m_largeSpeedLabel->setText(QStringLiteral("Connecting..."));
+            break;
+        case TransferStatus::Handshaking:
+            m_statusBadge->setText(QStringLiteral("HANDSHAKING"));
+            m_statusBadge->setStyleSheet("background-color: #1E293B; color: #94A3B8; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 6px;");
+            m_largeSpeedLabel->setText(QStringLiteral("Handshaking..."));
+            break;
+        case TransferStatus::Offering:
+        case TransferStatus::WaitingApproval:
+            m_statusBadge->setText(QStringLiteral("WAITING FOR APPROVAL"));
+            m_statusBadge->setStyleSheet("background-color: #78350F; color: #FCD34D; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 6px;");
+            m_largeSpeedLabel->setText(QStringLiteral("Waiting..."));
+            m_currentFileLabel->setText(QStringLiteral("⚠️ Waiting for approval: Please click 'ACCEPT TRANSFER' on the receiving computer."));
+            break;
         case TransferStatus::Transferring:
             m_statusBadge->setText(QStringLiteral("TRANSFERRING"));
             m_statusBadge->setStyleSheet("background-color: #1E3A8A; color: #60A5FA; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 6px;");

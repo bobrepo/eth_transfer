@@ -90,6 +90,11 @@ ReceivePage::ReceivePage(QWidget* parent)
     m_freeSpaceLabel->setStyleSheet("font-size: 12px; color: #10B981;");
     dirLayout->addWidget(m_freeSpaceLabel);
 
+    m_autoAcceptCheck = new QCheckBox(QStringLiteral("Auto-accept incoming transfers from local Ethernet devices"), dirCard);
+    m_autoAcceptCheck->setStyleSheet("font-size: 13px; font-weight: 500; color: #E2E8F0; margin-top: 6px;");
+    dirLayout->addWidget(m_autoAcceptCheck);
+
+    connect(m_autoAcceptCheck, &QCheckBox::toggled, this, &ReceivePage::autoAcceptToggled);
     connect(changeFolderBtn, &QPushButton::clicked, this, &ReceivePage::onChangeFolderClicked);
     connect(openFolderBtn, &QPushButton::clicked, this, &ReceivePage::onOpenFolderClicked);
 
@@ -162,6 +167,16 @@ void ReceivePage::showIncomingOffer(const QString& senderDevice, uint64_t totalF
 
 void ReceivePage::hideIncomingOffer() {
     m_offerCard->hide();
+}
+
+bool ReceivePage::isAutoAcceptEnabled() const {
+    return m_autoAcceptCheck && m_autoAcceptCheck->isChecked();
+}
+
+void ReceivePage::setAutoAccept(bool enabled) {
+    if (m_autoAcceptCheck && m_autoAcceptCheck->isChecked() != enabled) {
+        m_autoAcceptCheck->setChecked(enabled);
+    }
 }
 
 } // namespace FastTransfer

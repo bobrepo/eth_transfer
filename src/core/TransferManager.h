@@ -37,6 +37,9 @@ public:
     uint32_t chunkSize() const { return m_chunkSize; }
     void setChunkSize(uint32_t bytes);
 
+    bool autoAccept() const { return m_autoAccept; }
+    void setAutoAccept(bool enabled);
+
     // Active session access
     TransferSession* activeSession() { return m_activeSession.get(); }
     DiscoveryService* discoveryService() { return m_discoveryService; }
@@ -75,6 +78,7 @@ private:
     QString m_downloadDir;
     DuplicatePolicy m_duplicatePolicy = DuplicatePolicy::Rename;
     bool m_ethernetOnly = false;
+    bool m_autoAccept = false;
     uint32_t m_chunkSize = DEFAULT_CHUNK_SIZE;
     uint16_t m_listenPort = DEFAULT_TCP_PORT;
 };

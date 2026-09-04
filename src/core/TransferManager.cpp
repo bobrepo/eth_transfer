@@ -34,6 +34,7 @@ bool TransferManager::initialize() {
     m_duplicatePolicy = static_cast<DuplicatePolicy>(policyInt);
 
     m_ethernetOnly = (m_database->getSetting("ethernet_only", "0") == "1");
+    m_autoAccept = (m_database->getSetting("auto_accept", "0") == "1");
     m_chunkSize = static_cast<uint32_t>(m_database->getSetting("chunk_size", QString::number(DEFAULT_CHUNK_SIZE)).toUInt());
 
     m_discoveryService->setDeviceName(m_deviceName);
@@ -95,6 +96,11 @@ void TransferManager::setChunkSize(uint32_t bytes) {
         m_chunkSize = bytes;
         m_database->setSetting("chunk_size", QString::number(bytes));
     }
+}
+
+void TransferManager::setAutoAccept(bool enabled) {
+    m_autoAccept = enabled;
+    m_database->setSetting("auto_accept", enabled ? "1" : "0");
 }
 
 TransferSession* TransferManager::initiateSend(const QHostAddress& targetIp,
@@ -174,7 +180,11 @@ void TransferManager::onNewIncomingConnection() {
             m_database->recordTransferStarted(rec);
             emit historyUpdated();
 
-            emit incomingTransferOffered(m_activeSession.get(), senderDevice, totalFiles, totalBytes);
+            if (m_autoAccept) {
+                acceptIncomingTransfer(m_activeSession.get());
+            } else {
+                emit incomingTransferOffered(m_activeSession.get(), senderDevice, totalFiles, totalBytes);
+            }
         });
 
         emit sessionStarted(m_activeSession.get());
