@@ -18,8 +18,15 @@ void SpeedGraph::addSpeedSample(double speedBps) {
     }
     m_points.append(speedMbs);
 
-    // Track dynamic max
-    m_maxSpeedSeen = std::max(100.0, speedMbs * 1.15);
+    // Compute maximum speed across the entire visible window
+    double maxInWindow = 0.0;
+    for (double p : m_points) {
+        if (p > maxInWindow) maxInWindow = p;
+    }
+
+    // Baseline scale 120 MB/s for 1GbE Ethernet; snap to 20 MB/s steps to stabilize grid
+    double requiredMax = std::max(120.0, maxInWindow * 1.15);
+    m_maxSpeedSeen = std::ceil(requiredMax / 20.0) * 20.0;
 
     update();
 }

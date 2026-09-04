@@ -99,9 +99,12 @@ private:
     TransferMetrics m_metrics;
     QTimer* m_metricsTimer = nullptr;
     QElapsedTimer m_sessionTimer;
+    QElapsedTimer m_sampleTimer;
+    uint64_t m_sessionStartBytes = 0;
     qint64 m_lastBytesCount = 0;
     double m_smoothedSpeed = 0.0;
     double m_peakSpeed = 0.0;
+    int m_consecutiveZeroTicks = 0;
 };
 
 } // namespace FastTransfer

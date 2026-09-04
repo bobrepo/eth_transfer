@@ -45,10 +45,13 @@ inline QString formatBytes(uint64_t bytes) {
 }
 
 inline QString formatSpeed(double bytesPerSec) {
-    constexpr double MB = 1024.0 * 1024.0;
     constexpr double KB = 1024.0;
+    constexpr double MB = KB * 1024.0;
+    constexpr double GB = MB * 1024.0;
 
-    if (bytesPerSec >= MB) {
+    if (bytesPerSec >= GB) {
+        return QString::asprintf("%.2f GB/s", bytesPerSec / GB);
+    } else if (bytesPerSec >= MB) {
         return QString::asprintf("%.1f MB/s", bytesPerSec / MB);
     } else if (bytesPerSec >= KB) {
         return QString::asprintf("%.1f KB/s", bytesPerSec / KB);

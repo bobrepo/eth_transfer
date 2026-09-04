@@ -89,6 +89,13 @@ void TransferSession::startSendingFile(uint64_t fileIndex, uint64_t startOffset)
         completeMsg.totalBytesTransferred = m_metrics.totalTransferred;
         m_connection->sendPacket(MessageType::TransferComplete, Protocol::serializeTransferComplete(completeMsg));
         setStatus(TransferStatus::Completed);
+        if (m_metricsTimer) m_metricsTimer->stop();
+        m_metrics.currentSpeedBps = 0.0;
+        m_metrics.etaSeconds = 0;
+        m_metrics.currentFileTransferred = m_metrics.currentFileSize;
+        m_metrics.totalTransferred = m_metrics.totalBytes;
+        emit metricsUpdated(m_metrics);
+        emit speedSampleRecorded(0.0);
         emit transferCompleted();
         return;
     }
@@ -213,7 +220,12 @@ void TransferSession::acceptTransfer(const QString& baseOutputDir, DuplicatePoli
     m_connection->sendPacket(MessageType::TransferAccept, Protocol::serializeTransferAccept(acceptMsg));
 
     m_sessionTimer.restart();
-    m_lastBytesCount = 0;
+    m_sampleTimer.restart();
+    m_sessionStartBytes = (m_connection ? m_connection->totalBytesReceived() : 0);
+    m_lastBytesCount = static_cast<qint64>(m_sessionStartBytes);
+    m_smoothedSpeed = 0.0;
+    m_peakSpeed = 0.0;
+    m_consecutiveZeroTicks = 0;
     m_metricsTimer->start(250); // Telemetry update every 250ms
     setStatus(TransferStatus::Transferring);
 }
@@ -233,6 +245,12 @@ void TransferSession::rejectTransfer(const QString& reason) {
 void TransferSession::pause() {
     if (m_status == TransferStatus::Transferring) {
         setStatus(TransferStatus::Paused);
+        if (m_metricsTimer) m_metricsTimer->stop();
+        m_metrics.currentSpeedBps = 0.0;
+        m_metrics.etaSeconds = -1;
+        emit metricsUpdated(m_metrics);
+        emit speedSampleRecorded(0.0);
+
         MsgTransferPause pauseMsg;
         pauseMsg.transferId = m_transferId;
         pauseMsg.reason = QStringLiteral("User paused transfer");
@@ -243,6 +261,13 @@ void TransferSession::pause() {
 void TransferSession::resume() {
     if (m_status == TransferStatus::Paused) {
         setStatus(TransferStatus::Transferring);
+        m_sampleTimer.restart();
+        m_lastBytesCount = static_cast<qint64>((m_direction == TransferDirection::Send && m_connection)
+                                                  ? m_connection->totalBytesSent()
+                                                  : (m_connection ? m_connection->totalBytesReceived() : m_metrics.totalTransferred));
+        m_consecutiveZeroTicks = 0;
+        if (m_metricsTimer) m_metricsTimer->start(250);
+
         MsgTransferResume resumeMsg;
         resumeMsg.transferId = m_transferId;
         resumeMsg.fileIndex = m_currentFileIndex;
@@ -257,6 +282,12 @@ void TransferSession::resume() {
 
 void TransferSession::cancel() {
     setStatus(TransferStatus::Cancelled);
+    if (m_metricsTimer) m_metricsTimer->stop();
+    m_metrics.currentSpeedBps = 0.0;
+    m_metrics.etaSeconds = -1;
+    emit metricsUpdated(m_metrics);
+    emit speedSampleRecorded(0.0);
+
     MsgTransferCancel cancelMsg;
     cancelMsg.transferId = m_transferId;
     cancelMsg.reason = QStringLiteral("User cancelled transfer");
@@ -334,7 +365,12 @@ void TransferSession::onPacketReceived(MessageType type, uint16_t flags, const Q
             if (accept && accept->accepted) {
                 setStatus(TransferStatus::Transferring);
                 m_sessionTimer.restart();
-                m_lastBytesCount = 0;
+                m_sampleTimer.restart();
+                m_sessionStartBytes = (m_connection ? m_connection->totalBytesSent() : 0);
+                m_lastBytesCount = static_cast<qint64>(m_sessionStartBytes);
+                m_smoothedSpeed = 0.0;
+                m_peakSpeed = 0.0;
+                m_consecutiveZeroTicks = 0;
                 m_metricsTimer->start(250);
                 startSendingFile(accept->startFileIndex, accept->resumeOffset);
             }
@@ -455,6 +491,13 @@ void TransferSession::onPacketReceived(MessageType type, uint16_t flags, const Q
 
         case MessageType::TransferComplete: {
             setStatus(TransferStatus::Completed);
+            if (m_metricsTimer) m_metricsTimer->stop();
+            m_metrics.currentSpeedBps = 0.0;
+            m_metrics.etaSeconds = 0;
+            m_metrics.currentFileTransferred = m_metrics.currentFileSize;
+            m_metrics.totalTransferred = m_metrics.totalBytes;
+            emit metricsUpdated(m_metrics);
+            emit speedSampleRecorded(0.0);
             emit transferCompleted();
             break;
         }
@@ -507,52 +550,73 @@ void TransferSession::onBytesTransferred(qint64 bytes) {
 
 void TransferSession::calculateMetrics() {
     if (!m_sessionTimer.isValid()) return;
+    if (m_status != TransferStatus::Transferring) return;
 
     qint64 elapsedMs = m_sessionTimer.elapsed();
     m_metrics.elapsedSeconds = elapsedMs / 1000;
 
-    // For sender, measuring real bytes transmitted by socket reflects true wire speed
+    qint64 sampleMs = m_sampleTimer.restart();
+    if (sampleMs <= 0) sampleMs = 1;
+    double sampleSec = static_cast<double>(sampleMs) / 1000.0;
+
+    // Track real network bytes transmitted (Sender) or received (Receiver)
     uint64_t currentTotal = (m_direction == TransferDirection::Send && m_connection)
                                 ? m_connection->totalBytesSent()
-                                : m_metrics.totalTransferred;
+                                : (m_connection ? m_connection->totalBytesReceived() : m_metrics.totalTransferred);
     uint64_t deltaBytes = (currentTotal >= static_cast<uint64_t>(m_lastBytesCount))
                               ? (currentTotal - static_cast<uint64_t>(m_lastBytesCount))
                               : 0;
     m_lastBytesCount = static_cast<qint64>(currentTotal);
 
-    // 250ms interval => multiply delta by 4 for bytes/sec
-    double instantSpeed = static_cast<double>(deltaBytes) * 4.0;
+    // Exact instantaneous wire throughput for this sampling window
+    double instantSpeed = static_cast<double>(deltaBytes) / sampleSec;
 
-    // Exponential Moving Average (EMA) smoothing: 70% previous, 30% instant
-    if (m_smoothedSpeed <= 0.0) {
-        m_smoothedSpeed = instantSpeed;
+    // Fast-drop if stream has paused/idle, smooth EMA otherwise
+    if (deltaBytes == 0) {
+        m_consecutiveZeroTicks++;
+        if (m_consecutiveZeroTicks >= 2) {
+            m_smoothedSpeed = 0.0;
+        } else {
+            m_smoothedSpeed *= 0.50;
+        }
     } else {
-        m_smoothedSpeed = 0.70 * m_smoothedSpeed + 0.30 * instantSpeed;
+        m_consecutiveZeroTicks = 0;
+        if (m_smoothedSpeed <= 0.0) {
+            m_smoothedSpeed = instantSpeed;
+        } else {
+            // Adaptive smoothing: 75% history, 25% instant
+            m_smoothedSpeed = 0.75 * m_smoothedSpeed + 0.25 * instantSpeed;
+        }
     }
 
-    m_peakSpeed = std::max(m_peakSpeed, instantSpeed);
+    // Ignore initial socket handshake/connect burst in the first second for peak speed
+    if (elapsedMs > 1000) {
+        m_peakSpeed = std::max(m_peakSpeed, m_smoothedSpeed);
+    }
 
+    // True active transfer average speed
     double averageSpeed = 0.0;
-    if (elapsedMs > 500) {
-        averageSpeed = static_cast<double>(currentTotal) / (static_cast<double>(elapsedMs) / 1000.0);
+    double activeElapsedSec = static_cast<double>(elapsedMs) / 1000.0;
+    if (activeElapsedSec > 0.5 && currentTotal >= m_sessionStartBytes) {
+        averageSpeed = static_cast<double>(currentTotal - m_sessionStartBytes) / activeElapsedSec;
     }
 
     m_metrics.currentSpeedBps = m_smoothedSpeed;
     m_metrics.averageSpeedBps = averageSpeed;
     m_metrics.peakSpeedBps = m_peakSpeed;
 
-    // ETA calculation
-    if (m_metrics.totalBytes > currentTotal && m_smoothedSpeed > 1024.0) {
-        uint64_t remainingBytes = m_metrics.totalBytes - currentTotal;
+    // Accurate ETA
+    if (m_metrics.totalBytes > m_metrics.totalTransferred && m_smoothedSpeed > 1024.0) {
+        uint64_t remainingBytes = m_metrics.totalBytes - m_metrics.totalTransferred;
         m_metrics.etaSeconds = static_cast<int64_t>(static_cast<double>(remainingBytes) / m_smoothedSpeed);
-    } else if (currentTotal >= m_metrics.totalBytes && m_metrics.totalBytes > 0) {
+    } else if (m_metrics.totalTransferred >= m_metrics.totalBytes && m_metrics.totalBytes > 0) {
         m_metrics.etaSeconds = 0;
     } else {
         m_metrics.etaSeconds = -1; // Calculating...
     }
 
     emit metricsUpdated(m_metrics);
-    emit speedSampleRecorded(instantSpeed);
+    emit speedSampleRecorded(m_smoothedSpeed);
 }
 
 } // namespace FastTransfer

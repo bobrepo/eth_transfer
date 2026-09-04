@@ -188,6 +188,7 @@ TransferPage::TransferPage(QWidget* parent)
 void TransferPage::setSession(TransferSession* session) {
     m_session = session;
     if (m_session) {
+        if (m_speedGraph) m_speedGraph->clear();
         updateStatus(m_session->status());
         m_remoteInfoLabel->setText(QString("Remote Computer: %1 (%2)")
                                        .arg(m_session->remoteDevice(), m_session->remoteIp().toString()));
@@ -197,7 +198,8 @@ void TransferPage::setSession(TransferSession* session) {
         m_remoteInfoLabel->setText(QStringLiteral("No transfer currently in progress."));
         m_pauseResumeBtn->setEnabled(false);
         m_cancelBtn->setEnabled(false);
-        m_offerActionFrame->hide();
+        if (m_offerActionFrame) m_offerActionFrame->hide();
+        if (m_speedGraph) m_speedGraph->clear();
     }
 }
 
@@ -251,13 +253,16 @@ void TransferPage::updateStatus(TransferStatus status) {
             m_statusBadge->setText(QStringLiteral("PAUSED"));
             m_statusBadge->setStyleSheet("background-color: #78350F; color: #FBBF24; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 6px;");
             m_pauseResumeBtn->setText(QStringLiteral("RESUME"));
-            m_largeSpeedLabel->setText(QStringLiteral("0.0 MB/s"));
+            m_largeSpeedLabel->setText(QStringLiteral("PAUSED"));
+            m_currentSpeedSub->setText(QStringLiteral("0.0 MB/s"));
             break;
         case TransferStatus::Completed:
             m_statusBadge->setText(QStringLiteral("COMPLETED"));
             m_statusBadge->setStyleSheet("background-color: #064E3B; color: #34D399; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 6px;");
             m_pauseResumeBtn->setEnabled(false);
             m_cancelBtn->setEnabled(false);
+            m_largeSpeedLabel->setText(QStringLiteral("COMPLETED"));
+            m_currentSpeedSub->setText(QStringLiteral("0.0 MB/s"));
             m_integrityLabel->setText(QStringLiteral("✓ Transfer Complete & BLAKE3 Verified"));
             break;
         case TransferStatus::Failed:
@@ -265,12 +270,16 @@ void TransferPage::updateStatus(TransferStatus status) {
             m_statusBadge->setStyleSheet("background-color: #7F1D1D; color: #F87171; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 6px;");
             m_pauseResumeBtn->setEnabled(false);
             m_cancelBtn->setEnabled(false);
+            m_largeSpeedLabel->setText(QStringLiteral("FAILED"));
+            m_currentSpeedSub->setText(QStringLiteral("0.0 MB/s"));
             break;
         case TransferStatus::Cancelled:
             m_statusBadge->setText(QStringLiteral("CANCELLED"));
             m_statusBadge->setStyleSheet("background-color: #232733; color: #94A3B8; font-weight: 700; font-size: 11px; padding: 4px 10px; border-radius: 6px;");
             m_pauseResumeBtn->setEnabled(false);
             m_cancelBtn->setEnabled(false);
+            m_largeSpeedLabel->setText(QStringLiteral("CANCELLED"));
+            m_currentSpeedSub->setText(QStringLiteral("0.0 MB/s"));
             break;
         default:
             break;
@@ -278,11 +287,41 @@ void TransferPage::updateStatus(TransferStatus status) {
 }
 
 void TransferPage::updateMetrics(const TransferMetrics& metrics) {
-    m_largeSpeedLabel->setText(metrics.formattedCurrentSpeed());
-    m_currentSpeedSub->setText(metrics.formattedCurrentSpeed());
-    m_avgSpeedSub->setText(metrics.formattedAverageSpeed());
-    m_peakSpeedSub->setText(metrics.formattedPeakSpeed());
-    m_etaLabel->setText(metrics.formattedEta());
+    if (m_session) {
+        TransferStatus status = m_session->status();
+        if (status == TransferStatus::Transferring) {
+            m_largeSpeedLabel->setText(metrics.formattedCurrentSpeed());
+            m_currentSpeedSub->setText(metrics.formattedCurrentSpeed());
+            m_avgSpeedSub->setText(metrics.formattedAverageSpeed());
+            m_peakSpeedSub->setText(metrics.formattedPeakSpeed());
+            m_etaLabel->setText(metrics.formattedEta());
+        } else if (status == TransferStatus::Paused) {
+            m_largeSpeedLabel->setText(QStringLiteral("PAUSED"));
+            m_currentSpeedSub->setText(QStringLiteral("0.0 MB/s"));
+            m_etaLabel->setText(QStringLiteral("Paused"));
+        } else if (status == TransferStatus::Completed) {
+            m_largeSpeedLabel->setText(QStringLiteral("COMPLETED"));
+            m_currentSpeedSub->setText(QStringLiteral("0.0 MB/s"));
+            m_avgSpeedSub->setText(metrics.formattedAverageSpeed());
+            m_peakSpeedSub->setText(metrics.formattedPeakSpeed());
+            m_etaLabel->setText(QStringLiteral("0s"));
+        } else if (status == TransferStatus::WaitingApproval || status == TransferStatus::Offering) {
+            m_largeSpeedLabel->setText(QStringLiteral("Waiting..."));
+            m_currentSpeedSub->setText(QStringLiteral("0.0 MB/s"));
+            m_etaLabel->setText(QStringLiteral("Waiting"));
+        } else if (status == TransferStatus::Connecting || status == TransferStatus::Handshaking) {
+            m_largeSpeedLabel->setText(QStringLiteral("Connecting..."));
+            m_currentSpeedSub->setText(QStringLiteral("0.0 MB/s"));
+            m_etaLabel->setText(QStringLiteral("Connecting"));
+        }
+    } else {
+        m_largeSpeedLabel->setText(metrics.formattedCurrentSpeed());
+        m_currentSpeedSub->setText(metrics.formattedCurrentSpeed());
+        m_avgSpeedSub->setText(metrics.formattedAverageSpeed());
+        m_peakSpeedSub->setText(metrics.formattedPeakSpeed());
+        m_etaLabel->setText(metrics.formattedEta());
+    }
+
     m_elapsedLabel->setText(metrics.formattedElapsed());
 
     // Current File
