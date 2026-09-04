@@ -107,7 +107,7 @@ ctest --test-dir build -C Release --output-on-failure
 
 FastTransfer includes an automated setup script that detects your distribution (Arch Linux, Ubuntu/Debian, Fedora, openSUSE), automatically installs required packages and Qt 6 modules, compiles with Ninja across all CPU cores, runs tests, installs the application and desktop launcher, and configures firewall rules.
 
-#### 1. Quick Automated Setup & Run (Recommended)
+#### 1. Quick Automated Setup & Run (Initial Installation)
 ```bash
 # Make script executable and run:
 chmod +x setup.sh
@@ -118,7 +118,17 @@ chmod +x setup.sh
 * `./setup.sh --package`: Builds and installs a native Arch Linux `.pkg.tar.zst` package via `makepkg -si`.
 * `./setup.sh --no-install`: Builds and tests locally without requiring `sudo` system installation.
 
-#### 2. Native Arch Linux Package (`makepkg`)
+#### 2. Quick One-Command Update & Rebuild (`update.sh`)
+Whenever new updates or code changes are pulled on Arch Linux:
+```bash
+chmod +x update.sh
+./update.sh --run
+```
+* `./update.sh`: Pulls git changes, recompiles with Ninja, runs tests, and updates `/usr/bin/FastTransfer`.
+* `./update.sh --run`: Automatically closes old instance and restarts updated FastTransfer.
+* `./update.sh --no-pull`: Rebuilds and reinstalls from local code changes without running `git pull`.
+
+#### 3. Native Arch Linux Package (`makepkg`)
 ```bash
 # Build and install standard native Arch package with desktop integration
 cd packaging/arch
