@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=FastTransfer
+GenericName=Ethernet File Transfer
+Comment=High-speed direct PC-to-PC file transfer application over Ethernet
+Exec=FastTransfer %F
+Icon=fasttransfer
+Terminal=false
+Type=Application
+Categories=Network;FileTransfer;Utility;Qt;
+MimeType=application/octet-stream;
+Keywords=transfer;ethernet;lan;network;files;send;receive;blake3;
+StartupNotify=true
+StartupWMClass=FastTransfer
