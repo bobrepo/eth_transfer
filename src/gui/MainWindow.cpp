@@ -177,6 +177,33 @@ void MainWindow::onIncomingTransferOffered(TransferSession* session, const QStri
     m_receivePage->showIncomingOffer(senderDevice, totalFiles, totalBytes);
     m_btnReceive->setChecked(true);
     m_stackedWidget->setCurrentIndex(1); // Switch to Receive page so user can approve
+
+    // Bring window to front and alert user
+    raise();
+    activateWindow();
+    QApplication::alert(this);
+
+    // Show modal pop-up prompt
+    QMessageBox msgBox(this);
+    msgBox.setWindowTitle(QStringLiteral("Incoming Transfer Request"));
+    msgBox.setText(QString("<h3>Incoming File Transfer</h3>"
+                           "<b>From:</b> %1<br>"
+                           "<b>Files:</b> %2<br>"
+                           "<b>Total Size:</b> %3<br><br>"
+                           "Do you want to accept and download these files?")
+                       .arg(senderDevice, QString::number(totalFiles), formatBytes(totalBytes)));
+    msgBox.setIcon(QMessageBox::Question);
+    QPushButton* acceptBtn = msgBox.addButton(QStringLiteral("Accept Transfer"), QMessageBox::AcceptRole);
+    QPushButton* rejectBtn = msgBox.addButton(QStringLiteral("Reject"), QMessageBox::RejectRole);
+    msgBox.setDefaultButton(acceptBtn);
+
+    msgBox.exec();
+
+    if (msgBox.clickedButton() == acceptBtn) {
+        onOfferAccepted();
+    } else {
+        onOfferRejected();
+    }
 }
 
 void MainWindow::onOfferAccepted() {
